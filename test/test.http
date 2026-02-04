@@ -5,3 +5,15 @@
 GET {{baseUrl}}/latest
 Content-Type: application/json
 
+###
+GET {{baseUrl}}/trending
+Content-Type: application/json
+
+###
+GET {{baseUrl}}/search?q=kaisar
+Content-Type: application/json
+
+###
+GET {{baseUrl}}/login
+Content-Type: application/json
+

@@ -11,6 +11,6 @@ app.use(
 );
 app.use(express.json());
 
-app.use(require("./routes/external"));
+app.use(require("./routes/drama"));
 
 module.exports = { app };
