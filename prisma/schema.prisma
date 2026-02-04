@@ -1,0 +1,86 @@
+generator client {
+  provider = "prisma-client-js"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+model Book {
+  id             Int     @id @default(autoincrement())
+  bookId         String  @unique
+  bookName       String
+  description    String  @db.Text
+  subDescription String? @db.Text
+
+  isHot        Boolean @default(false)
+  language     String?
+  totalChapter Int?
+
+  thumbUrl String? @db.Text
+
+  series Series?
+
+  tags BookTag[]
+
+  createdAt DateTime @default(now())
+}
+
+model BookTag {
+  bookId Int
+  tagId  Int
+
+  book Book @relation(fields: [bookId], references: [id])
+  tag  Tag  @relation(fields: [tagId], references: [id])
+
+  @@id([bookId, tagId])
+}
+
+model Tag {
+  id   Int    @id @default(autoincrement())
+  name String @unique
+
+  books BookTag[]
+}
+
+model Series {
+  id       Int     @id @default(autoincrement())
+  seriesId String  @unique
+  title    String
+  intro    String? @db.Text
+
+  cover        String? @db.Text
+  episodeCount Int?
+
+  followed      Boolean @default(false)
+  followedCount Int?
+
+  book    Book @relation(fields: [bookRef], references: [id])
+  bookRef Int  @unique
+
+  videos Video[]
+}
+
+model Video {
+  id      Int    @id @default(autoincrement())
+  videoId String @unique
+
+  index Int?
+  title String? @db.Text
+
+  duration  Int?
+  mainUrl   String  @db.Text
+  backupUrl String? @db.Text
+
+  cover        String? @db.Text
+  episodeCover String? @db.Text
+
+  videoWidth  Int?
+  videoHeight Int?
+  expireTime  BigInt?
+
+  series    Series @relation(fields: [seriesRef], references: [id])
+  seriesRef Int
+}

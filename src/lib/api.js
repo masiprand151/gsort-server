@@ -1,0 +1,13 @@
+const axios = require("axios");
+
+const MELOLO_URL = process.env.MELOLO_URL;
+
+const api = axios.create({
+  baseURL: MELOLO_URL,
+  timeout: 10000,
+  headers: {
+    "Content-Type": "application/json",
+  },
+});
+
+module.exports = api;
