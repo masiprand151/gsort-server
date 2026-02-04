@@ -8,6 +8,42 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+enum Role {
+  ANONYMOUS
+  CREATOR
+}
+
+model User {
+  id          Int     @id @default(autoincrement())
+  username    String? @unique
+  password    String? // hashed password (untuk creator / email login)
+  isAnonymous Boolean @default(true)
+  role        Role    @default(ANONYMOUS)
+
+  // social login
+  facebookId String? @unique
+  googleId   String? @unique
+
+  refreshToken String?
+  daviceId     String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  books    Book[] // hanya creator punya buku
+  comments Comment[]
+}
+
+model Comment {
+  id        Int      @id @default(autoincrement())
+  content   String
+  user      User     @relation(fields: [userId], references: [id])
+  userId    Int
+  book      Book     @relation(fields: [bookId], references: [id])
+  bookId    Int
+  createdAt DateTime @default(now())
+}
+
 model Book {
   id             Int     @id @default(autoincrement())
   bookId         String  @unique
@@ -26,6 +62,10 @@ model Book {
   tags BookTag[]
 
   createdAt DateTime @default(now())
+
+  users User[]
+
+  comments Comment[]
 }
 
 model BookTag {
