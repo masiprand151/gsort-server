@@ -228,10 +228,39 @@ const trending = async (req, res, next) => {
 
         if (dbBook) {
           if (dbBook.series && dbBook.series.videos) {
-            dbBook.series.videos = dbBook.series.videos.map((v) => ({
-              ...v,
-              expireTime: Number(v.expireTime || 0),
-            }));
+            dbBook.series.videos = await Promise.all(
+              dbBook.series.videos.map(async (v) => {
+                const expired = isExpired(Number(v.expireTime));
+
+                // 1️⃣ belum expired → langsung pakai
+                if (!expired) {
+                  return {
+                    ...v,
+                    expireTime: Number(v.expireTime || 0),
+                  };
+                }
+
+                // 2️⃣ expired → fetch stream baru
+                const stream = await getValidStream(v.videoId, v);
+
+                // 3️⃣ update DB hanya jika expired
+                await prisma.video.update({
+                  where: { id: v.id },
+                  data: {
+                    mainUrl: stream.mainUrl,
+                    backupUrl: stream.backupUrl,
+                    expireTime: stream.expireTime,
+                    videoHeight: stream.videoHeight,
+                    videoWidth: stream.videoWidth,
+                  },
+                });
+
+                return {
+                  ...v,
+                  ...stream,
+                };
+              }),
+            );
           }
 
           return dbBook;
@@ -489,6 +518,7 @@ const search = async (req, res, next) => {
         books: booksData,
       });
     }
+    console.log(result);
 
     res.json(result);
   } catch (error) {
@@ -497,4 +527,51 @@ const search = async (req, res, next) => {
   }
 };
 
-module.exports = { getLatest, trending, search };
+const play = async (req, res) => {
+  try {
+    const { videoId } = req.params;
+
+    const video = await prisma.video.findUnique({
+      where: { videoId },
+    });
+
+    if (!video) {
+      return res.status(404).json({ message: "Video not found" });
+    }
+
+    const expired = isExpired(Number(video.expireTime));
+
+    // masih valid
+    if (!expired) {
+      return res.json({
+        streamUrl: video.mainUrl,
+        expireTime: Number(video.expireTime),
+      });
+    }
+
+    // expired → refresh
+    const stream = await getValidStream(videoId, video);
+
+    await prisma.video.update({
+      where: { id: video.id },
+      data: {
+        mainUrl: stream.mainUrl,
+        backupUrl: stream.backupUrl,
+        expireTime: stream.expireTime,
+        videoWidth: stream.videoWidth,
+        videoHeight: stream.videoHeight,
+      },
+    });
+
+    return res.json({
+      streamUrl: stream.mainUrl,
+      expireTime: stream.expireTime,
+      refreshed: true,
+    });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: "Failed to get stream" });
+  }
+};
+
+module.exports = { getLatest, trending, search, play };
