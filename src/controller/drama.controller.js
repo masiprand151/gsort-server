@@ -1,6 +1,13 @@
 const api = require("../lib/api");
 const { isExpired } = require("../lib/ceck");
 const prisma = require("../lib/prisma");
+function serializeBigInt(data) {
+  return JSON.parse(
+    JSON.stringify(data, (_, value) =>
+      typeof value === "bigint" ? value.toString() : value,
+    ),
+  );
+}
 
 async function getValidStream(vid, oldVideo) {
   if (oldVideo && !isExpired(oldVideo.expire_time)) {
@@ -594,4 +601,52 @@ const play = async (req, res) => {
   }
 };
 
-module.exports = { getLatest, trending, search, play };
+const getDrama = async (req, res, next) => {
+  try {
+    const { limit = 10 } = req.query;
+
+    const result = await prisma.book.findMany({
+      take: Number(limit),
+      include: {
+        tags: { include: { tag: true } },
+      },
+      orderBy: {
+        createdAt: "desc",
+      },
+    });
+
+    res.status(200).json(result);
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: "Failed " });
+  }
+};
+
+const getById = async (req, res) => {
+  try {
+    const { bookId } = req.params;
+
+    const result = await prisma.book.findUnique({
+      where: { bookId },
+      include: {
+        tags: { include: { tag: true } },
+        series: {
+          include: {
+            videos: true,
+          },
+        },
+      },
+    });
+
+    if (!result) {
+      return res.status(404).json("Book Not Found");
+    }
+
+    res.status(200).json(serializeBigInt(result));
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: "Failed" });
+  }
+};
+
+module.exports = { getLatest, trending, search, play, getDrama, getById };

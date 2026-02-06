@@ -16,4 +16,11 @@ Content-Type: application/json
 ###
 GET {{baseUrl}}/login
 Content-Type: application/json
+###
+GET {{baseUrl}}/drama
+Content-Type: application/json
+
+###
+GET {{baseUrl}}/drama/7597697149484157957
+Content-Type: application/json
 
