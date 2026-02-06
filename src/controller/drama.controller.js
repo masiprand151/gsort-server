@@ -481,10 +481,10 @@ const search = async (req, res, next) => {
           followedCount: video_data.followed_cnt,
           videos: { create: videos },
         };
-
-        // simpan buku ke DB
-        dbBook = await prisma.book.create({
-          data: {
+        dbBook = await prisma.book.upsert({
+          where: { bookId: book.book_id },
+          update: {}, // tidak ada update, cuma ambil data jika sudah ada
+          create: {
             bookId: book.book_id,
             bookName: book.book_name,
             description: book.abstract,
@@ -501,6 +501,26 @@ const search = async (req, res, next) => {
             tags: { include: { tag: true } },
           },
         });
+
+        // simpan buku ke DB
+        // dbBook = await prisma.book.create({
+        //   data: {
+        //     bookId: book.book_id,
+        //     bookName: book.book_name,
+        //     description: book.abstract,
+        //     subDescription: book.sub_abstract,
+        //     isHot: book.is_hot === "1",
+        //     language: book.language,
+        //     totalChapter: Number(book.last_chapter_index),
+        //     thumbUrl: book.thumb_url,
+        //     series: { create: series },
+        //     tags: { create: tags },
+        //   },
+        //   include: {
+        //     series: { include: { videos: true } },
+        //     tags: { include: { tag: true } },
+        //   },
+        // });
 
         // serialize expireTime BigInt → Number
         if (dbBook.series && dbBook.series.videos) {
