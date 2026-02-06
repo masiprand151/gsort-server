@@ -360,7 +360,7 @@ const trending = async (req, res, next) => {
 
 const search = async (req, res, next) => {
   try {
-    const { q, limit = 5, offset = 0 } = req.query;
+    const { q, limit = 10, offset = 0 } = req.query;
 
     // 1️⃣ cek di database dulu
     const dbBooks = await prisma.book.findMany({
