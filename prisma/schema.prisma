@@ -52,6 +52,7 @@ model Book {
   subDescription String? @db.Text
 
   isHot        Boolean @default(false)
+  isExclusive  Boolean @default(false)
   language     String?
   totalChapter Int?
 
@@ -110,9 +111,10 @@ model Video {
   index Int?
   title String? @db.Text
 
-  duration  Int?
-  mainUrl   String  @db.Text
-  backupUrl String? @db.Text
+  duration   Int?
+  mainUrl    String  @db.Text
+  backupUrl  String? @db.Text
+  resolution Json?
 
   cover        String? @db.Text
   episodeCover String? @db.Text

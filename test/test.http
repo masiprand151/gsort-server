@@ -3,24 +3,51 @@
 
 ###
 GET {{baseUrl}}/latest
-Content-Type: application/json
+Content-Type: application/json 
 
 ###
 GET {{baseUrl}}/trending
 Content-Type: application/json
 
 ###
-GET {{baseUrl}}/search?q=kaisar
+GET {{baseUrl}}/search?q=pendekar
 Content-Type: application/json
 
 ###
 GET {{baseUrl}}/login
 Content-Type: application/json
+
+
+# const fetchNext = async () => {
+#   if (loading || !hasNext) return;
+
+#   setLoading(true);
+
+#   const res = await api.get("/drama", {
+#     params: {
+#       limit: 10,
+#       cursor,
+#     },
+#   });
+
+#   setData((prev) => [...prev, ...res.data.data]);
+#   setCursor(res.data.nextCursor);
+#   setHasNext(res.data.hasNext);
+
+#   setLoading(false);
+# };
+
+
+
 ###
 GET {{baseUrl}}/drama
 Content-Type: application/json
 
 ###
-GET {{baseUrl}}/drama/7597697149484157957
+GET {{baseUrl}}/drama/7582070606904953909
+Content-Type: application/json
+
+###
+GET {{baseUrl}}/7582079402364636165/play
 Content-Type: application/json
 
