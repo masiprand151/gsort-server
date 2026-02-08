@@ -586,8 +586,6 @@ const getDrama = async (req, res) => {
         ).toString("base64")
       : null;
 
-    console.log(books);
-
     res.status(200).json({
       data,
       nextCursor,
