@@ -55,8 +55,7 @@ model Book {
   isExclusive  Boolean @default(false)
   language     String?
   totalChapter Int?
-
-  thumbUrl String? @db.Text
+  thumbUrl     String? @db.Text
 
   series Series?
 
@@ -115,6 +114,7 @@ model Video {
   mainUrl    String  @db.Text
   backupUrl  String? @db.Text
   resolution Json?
+  disclaimer Json?
 
   cover        String? @db.Text
   episodeCover String? @db.Text

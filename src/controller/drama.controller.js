@@ -11,7 +11,7 @@ const {
 const getLatest = async (req, res) => {
   try {
     /**
-     * 1️⃣ Ambil dari DB dulu
+     *  Ambil dari DB dulu
      */
     const books = await prisma.book.findMany({
       where: { isHot: true },
@@ -42,6 +42,7 @@ const getLatest = async (req, res) => {
                   backupUrl: refreshed.backupUrl,
                   expireTime: refreshed.expireTime,
                   resolution: refreshed.resolution,
+                  disclaimer: refreshed.disclaimer,
                 },
               });
 
@@ -70,7 +71,7 @@ const getLatest = async (req, res) => {
     }
 
     /**
-     * 2️⃣ Fallback ke API eksternal
+     * Fallback ke API eksternal
      */
     const melolo = await api.get("/latest");
 
@@ -178,7 +179,7 @@ const trending = async (req, res) => {
     const result = await Promise.all(
       melolo.data.books.map(async (book) => {
         /**
-         * 1️⃣ Cek DB dulu
+         * Cek DB dulu
          */
         let dbBook = await prisma.book.findUnique({
           where: { bookId: book.book_id },
@@ -211,6 +212,7 @@ const trending = async (req, res) => {
                   videoHeight: stream.videoHeight,
                   videoWidth: stream.videoWidth,
                   resolution: stream.resolution,
+                  disclaimer: stream.disclaimer,
                 },
               });
 
@@ -218,7 +220,7 @@ const trending = async (req, res) => {
             }),
           );
 
-          // 🔥 bulk update
+          // bulk update
           if (updates.length > 0) {
             await prisma.$transaction(
               updates.map((u) =>
@@ -235,7 +237,7 @@ const trending = async (req, res) => {
         }
 
         /**
-         * 2️⃣ Tidak ada di DB → fetch detail
+         * Tidak ada di DB → fetch detail
          */
         const detail = await api.get(`/detail/${book.book_id}`);
         const video_data = detail.data?.data?.video_data;
@@ -249,6 +251,7 @@ const trending = async (req, res) => {
               videoId: vid.vid,
               index: vid.vid_index,
               title: vid.title,
+              disclaimer: stream.disclaimer,
               duration: vid.duration,
               mainUrl: stream.mainUrl,
               backupUrl: stream.backupUrl,
@@ -258,6 +261,7 @@ const trending = async (req, res) => {
               videoHeight: stream.videoHeight,
               videoWidth: stream.videoWidth,
               resolution: stream.resolution,
+              disclaimer: stream.disclaimer,
             };
           }),
         );
@@ -397,7 +401,7 @@ const search = async (req, res) => {
     );
 
     /* ================================
-     * 5️⃣ Simpan ke DB
+     *  Simpan ke DB
      * ================================ */
     for (const item of details) {
       if (!item?.detail) continue;
@@ -422,6 +426,7 @@ const search = async (req, res) => {
             videoHeight: stream.videoHeight,
             videoWidth: stream.videoWidth,
             resolution: stream.resolution,
+            disclaimer: stream.disclaimer,
           };
         }),
       );
@@ -474,14 +479,14 @@ const search = async (req, res) => {
     }
 
     /* ================================
-     * 6️⃣ Gabungkan hasil DB + API
+     * Gabungkan hasil DB + API
      * ================================ */
     const result = [
       ...dbBooks.map(serializeBook),
       ...Array.from(bookMap.values()),
     ].slice(0, take);
 
-    res.json(result);
+    res.status(200).json(result);
   } catch (error) {
     console.error(error);
     res.status(500).json({ error: "Something went wrong" });
@@ -506,6 +511,7 @@ const play = async (req, res) => {
         streamUrl: video.mainUrl,
         resolution: video.resolution,
         expireTime: Number(video.expireTime),
+        disclaimer: video.disclaimer,
       });
     }
 
@@ -527,13 +533,15 @@ const play = async (req, res) => {
         videoWidth: stream.videoWidth,
         videoHeight: stream.videoHeight,
         resolution: stream.resolution,
+        disclaimer: stream.disclaimer,
       },
     });
 
-    return res.json({
+    return res.status(200).json({
       streamUrl: stream.mainUrl,
       resolution: stream.resolution,
       expireTime: Number(stream.expireTime),
+      disclaimer: stream.disclaimer,
       refreshed: true,
     });
   } catch (err) {

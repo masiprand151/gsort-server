@@ -57,6 +57,7 @@ async function getValidStream(vid, oldVideo) {
     videoHeight: model.video_height,
     videoWidth: model.video_width,
     resolution: JSON.stringify(resolution),
+    disclaimer: model.disclaimer_info,
   };
 }
 
