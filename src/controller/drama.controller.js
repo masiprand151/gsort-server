@@ -600,7 +600,7 @@ const getDrama = async (req, res) => {
       ],
       include: {
         tags: { include: { tag: true } },
-        series: true,
+        series: { include: { videos: true } },
       },
     });
 
@@ -619,7 +619,7 @@ const getDrama = async (req, res) => {
       : null;
 
     res.status(200).json({
-      data,
+      data: serializeBigInt(data),
       nextCursor,
       hasNext,
     });
