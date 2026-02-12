@@ -5,7 +5,6 @@ const { v4 } = require("uuid");
 const anonymousLogin = async (req, res, next) => {
   try {
     const { deviceId } = req.body;
-    console.log(deviceId);
 
     const id = v4();
     const username = "guest_" + id.slice(0, 6);
