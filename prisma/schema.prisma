@@ -9,29 +9,43 @@ datasource db {
 }
 
 enum Role {
-  ANONYMOUS
-  CREATOR
+  GUEST
+  USER
+  ADMIN
 }
 
 model User {
-  id          Int     @id @default(autoincrement())
-  username    String? @unique
-  password    String? // hashed password (untuk creator / email login)
-  isAnonymous Boolean @default(true)
-  role        Role    @default(ANONYMOUS)
+  id       Int     @id @default(autoincrement())
+  uuid     String  @unique @default(uuid())
+  username String  @unique
+  email    String? @unique
+  password String?
+  role     Role    @default(GUEST)
+  deviceId String? @unique
 
-  // social login
-  facebookId String? @unique
-  googleId   String? @unique
-
-  refreshToken String?
-  daviceId     String?
-
+  avatar    String?  @db.Text
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  books    Book[] // hanya creator punya buku
   comments Comment[]
+  books    Book[] // relasi existing kamu
+  follows  Follow[]
+  history  WatchHistory[]
+  likes    VideoLike[]
+}
+
+model Follow {
+  id Int @id @default(autoincrement())
+
+  userId   Int
+  seriesId Int
+
+  user   User   @relation(fields: [userId], references: [id])
+  series Series @relation(fields: [seriesId], references: [id])
+
+  createdAt DateTime @default(now())
+
+  @@unique([userId, seriesId])
 }
 
 model Comment {
@@ -100,7 +114,23 @@ model Series {
   book    Book @relation(fields: [bookRef], references: [id])
   bookRef Int  @unique
 
-  videos Video[]
+  videos    Video[]
+  followers Follow[]
+}
+
+model WatchHistory {
+  id Int @id @default(autoincrement())
+
+  userId  Int
+  videoId Int
+
+  progress  Int      @default(0)
+  watchedAt DateTime @default(now())
+
+  user  User  @relation(fields: [userId], references: [id])
+  video Video @relation(fields: [videoId], references: [id])
+
+  @@unique([userId, videoId])
 }
 
 model Video {
@@ -123,6 +153,22 @@ model Video {
   videoHeight Int?
   expireTime  BigInt?
 
-  series    Series @relation(fields: [seriesRef], references: [id])
+  series    Series         @relation(fields: [seriesRef], references: [id])
   seriesRef Int
+  history   WatchHistory[]
+  likes     VideoLike[]
+}
+
+model VideoLike {
+  id Int @id @default(autoincrement())
+
+  userId  Int
+  videoId Int
+
+  user  User  @relation(fields: [userId], references: [id])
+  video Video @relation(fields: [videoId], references: [id])
+
+  createdAt DateTime @default(now())
+
+  @@unique([userId, videoId])
 }

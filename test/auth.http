@@ -2,3 +2,7 @@
 
 ####
 POST {{baseUrl}}/auth/anonymous
+
+{
+  "deviceId": "jlfk;lmefemlm;lmdlsslk"
+}

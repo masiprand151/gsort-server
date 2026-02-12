@@ -6,14 +6,15 @@ const {
   getDrama,
   getById,
 } = require("../controller/drama.controller");
+const { verifyToken } = require("../middleware/auth.middleware");
 
 const route = require("express").Router();
 
-route.get("/api/latest", getLatest);
-route.get("/api/trending", trending);
-route.get("/api/search", search);
-route.get("/api/:videoId/play", play);
-route.get("/api/drama", getDrama);
-route.get("/api/drama/:bookId", getById);
+route.get("/api/latest", verifyToken, getLatest);
+route.get("/api/trending", verifyToken, trending);
+route.get("/api/search", verifyToken, search);
+route.get("/api/:videoId/play", verifyToken, play);
+route.get("/api/drama", verifyToken, getDrama);
+route.get("/api/drama/:bookId", verifyToken, getById);
 
 module.exports = route;

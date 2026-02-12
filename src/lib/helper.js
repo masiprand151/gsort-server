@@ -1,5 +1,6 @@
 const { Buffer } = require("buffer");
 const api = require("./api");
+const jwt = require("jsonwebtoken");
 const { isExpired } = require("./ceck");
 
 function serializeBook(book) {
@@ -61,9 +62,21 @@ async function getValidStream(vid, oldVideo) {
   };
 }
 
+const generateToken = (user) =>
+  jwt.sign(
+    {
+      id: user.id,
+      uuid: user.uuid,
+      role: user.role,
+    },
+    process.env.ACCESS_SECRET,
+    { expiresIn: "30d" },
+  );
+
 module.exports = {
   serializeBigInt,
   serializeBook,
   getValidStream,
   serializeVideos,
+  generateToken,
 };
