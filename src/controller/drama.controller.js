@@ -42,7 +42,7 @@ const getLatest = async (req, res) => {
                   backupUrl: refreshed.backupUrl,
                   expireTime: refreshed.expireTime,
                   resolution: refreshed.resolution,
-                  disclaimer: refreshed.disclaimer,
+                  disclaimer: video.disclaimer,
                 },
               });
 
@@ -115,6 +115,7 @@ const getLatest = async (req, res) => {
               videoHeight: stream.videoHeight,
               videoWidth: stream.videoWidth,
               resolution: stream.resolution,
+              disclaimer: JSON.stringify(vid.disclaimer_info || "{}"),
             };
           }),
         );
@@ -212,7 +213,7 @@ const trending = async (req, res) => {
                   videoHeight: stream.videoHeight,
                   videoWidth: stream.videoWidth,
                   resolution: stream.resolution,
-                  disclaimer: stream.disclaimer,
+                  disclaimer: v.disclaimer,
                 },
               });
 
@@ -261,7 +262,7 @@ const trending = async (req, res) => {
               videoHeight: stream.videoHeight,
               videoWidth: stream.videoWidth,
               resolution: stream.resolution,
-              disclaimer: stream.disclaimer,
+              disclaimer: JSON.stringify(vid.disclaimer_info || "{}"),
             };
           }),
         );
@@ -322,12 +323,15 @@ const trending = async (req, res) => {
 const search = async (req, res) => {
   try {
     const { q, limit = 10, offset = 0 } = req.query;
+
+    if (!q) return res.json([]);
+
     const take = Number(limit);
     const skip = Number(offset);
 
     /* ================================
-     * 1️⃣ Cari di DB dulu (FAST PATH)
-     * ================================ */
+       1️⃣ SEARCH FROM DB
+    ================================== */
     const dbBooks = await prisma.book.findMany({
       where: {
         bookName: {
@@ -342,38 +346,48 @@ const search = async (req, res) => {
       },
     });
 
-    if (dbBooks.length >= take) {
-      // cukup dari DB → stop di sini
-      return res.json(dbBooks.map(serializeBook));
+    const serializedDB = dbBooks.map(serializeBook);
+
+    // kalau sudah cukup → langsung return
+    if (serializedDB.length >= take) {
+      return res.status(200).json(serializedDB);
     }
 
     /* ================================
-     * 2️⃣ Cari ke API eksternal
-     * ================================ */
-    const melolo = await api.get(
-      `/search?query=${encodeURIComponent(q)}&limit=${take}&offset=${skip}`,
-    );
+       2️⃣ SEARCH FROM EXTERNAL API
+    ================================== */
 
-    const apiGroups = melolo.data?.data?.search_data || [];
+    const remaining = take - serializedDB.length;
 
-    // filter group & book valid
+    let apiGroups = [];
+
+    try {
+      const melolo = await api.get(
+        `/search?query=${encodeURIComponent(q)}&limit=${remaining}&offset=${skip}`,
+      );
+
+      apiGroups = melolo.data?.data?.search_data || [];
+    } catch (err) {
+      console.log("External search API error:", err.message);
+      return res.status(200).json(serializedDB);
+    }
+
     const filteredBooks = apiGroups
-      .flatMap((group) => group.books || [])
+      .flatMap((g) => g.books || [])
       .filter((b) => b.abstract && b.book_name);
 
-    if (filteredBooks.length === 0) {
-      return res.json(dbBooks.map(serializeBook));
+    if (!filteredBooks.length) {
+      return res.status(200).json(serializedDB);
     }
 
     /* ================================
-     * 3️⃣ Batch cek DB (ANTI N+1)
-     * ================================ */
+       3️⃣ CHECK EXISTING IN DB (BATCH)
+    ================================== */
+
     const bookIds = filteredBooks.map((b) => b.book_id);
 
     const existingBooks = await prisma.book.findMany({
-      where: {
-        bookId: { in: bookIds },
-      },
+      where: { bookId: { in: bookIds } },
       include: {
         series: { include: { videos: true } },
         tags: { include: { tag: true } },
@@ -385,111 +399,124 @@ const search = async (req, res) => {
     );
 
     /* ================================
-     * 4️⃣ Ambil detail API (PARALLEL)
-     * ================================ */
+       4️⃣ FETCH DETAILS FOR MISSING
+    ================================== */
+
     const missingBooks = filteredBooks.filter((b) => !bookMap.has(b.book_id));
 
     const details = await Promise.all(
       missingBooks.map(async (book) => {
         try {
-          const res = await api.get(`/detail/${book.book_id}`);
-          return { book, detail: res.data?.data };
-        } catch {
+          const resDetail = await api.get(`/detail/${book.book_id}`);
+
+          return { book, detail: resDetail.data?.data };
+        } catch (err) {
+          console.log("Detail fetch error:", err.message);
           return null;
         }
       }),
     );
 
     /* ================================
-     *  Simpan ke DB
-     * ================================ */
+       5️⃣ SAVE NEW BOOKS (SAFE MODE)
+    ================================== */
+
     for (const item of details) {
       if (!item?.detail) continue;
 
-      const { book, detail } = item;
-      const videoData = detail.video_data || {};
+      try {
+        const { book, detail } = item;
+        const videoData = detail.video_data || {};
 
-      /* ===== videos (PARALLEL) ===== */
-      const videos = await Promise.all(
-        (videoData.video_list || []).map(async (vid) => {
-          const stream = await getValidStream(vid.vid, null);
-          return {
-            videoId: vid.vid,
-            index: vid.vid_index,
-            title: vid.title,
-            duration: vid.duration,
-            mainUrl: stream.mainUrl,
-            backupUrl: stream.backupUrl,
-            expireTime: stream.expireTime,
-            cover: vid.cover,
-            episodeCover: vid.episode_cover,
-            videoHeight: stream.videoHeight,
-            videoWidth: stream.videoWidth,
-            resolution: stream.resolution,
-            disclaimer: stream.disclaimer,
-          };
-        }),
-      );
+        const videos = await Promise.all(
+          (videoData.video_list || []).map(async (vid) => {
+            try {
+              const stream = await getValidStream(vid.vid, null);
 
-      /* ===== tags ===== */
-      const tags = (book.stat_infos || []).map((t) => ({
-        tag: {
-          connectOrCreate: {
-            where: { name: t },
-            create: { name: t },
+              return {
+                videoId: vid.vid,
+                index: vid.vid_index,
+                title: vid.title,
+                duration: vid.duration,
+                mainUrl: stream?.mainUrl || null,
+                backupUrl: stream?.backupUrl || null,
+                expireTime: stream?.expireTime || null,
+                cover: vid.cover,
+                episodeCover: vid.episode_cover,
+                videoHeight: stream?.videoHeight || null,
+                videoWidth: stream?.videoWidth || null,
+                resolution: stream?.resolution || null,
+                disclaimer: JSON.stringify(vid.disclaimer_info || {}),
+              };
+            } catch (err) {
+              console.log("Stream error:", err.message);
+              return null;
+            }
+          }),
+        );
+
+        const safeVideos = videos.filter(Boolean);
+
+        const savedBook = await prisma.book.upsert({
+          where: { bookId: book.book_id },
+          update: {}, // jangan update berat saat search
+          create: {
+            bookId: book.book_id,
+            bookName: book.book_name,
+            description: book.abstract,
+            subDescription: book.sub_abstract,
+            isHot: book.is_hot === "1",
+            isExclusive: book.is_exclusive === "1",
+            language: book.language,
+            totalChapter: Number(book.last_chapter_index),
+            thumbUrl: book.thumb_url,
+
+            series: {
+              create: {
+                seriesId: String(videoData.series_id),
+                title: videoData.series_title,
+                intro: videoData.series_intro,
+                cover: videoData.series_cover,
+                episodeCount: videoData.episode_cnt,
+                followed: videoData.followed,
+                followedCount: videoData.followed_cnt,
+                videos: {
+                  createMany: {
+                    data: safeVideos,
+                    skipDuplicates: true,
+                  },
+                },
+              },
+            },
           },
-        },
-      }));
+          include: {
+            series: { include: { videos: true } },
+            tags: { include: { tag: true } },
+          },
+        });
 
-      /* ===== series ===== */
-      const series = {
-        seriesId: String(videoData.series_id),
-        title: videoData.series_title,
-        intro: videoData.series_intro,
-        cover: videoData.series_cover,
-        episodeCount: videoData.episode_cnt,
-        followed: videoData.followed,
-        followedCount: videoData.followed_cnt,
-        videos: { create: videos },
-      };
-
-      const savedBook = await prisma.book.upsert({
-        where: { bookId: book.book_id },
-        update: {},
-        create: {
-          bookId: book.book_id,
-          bookName: book.book_name,
-          description: book.abstract,
-          subDescription: book.sub_abstract,
-          isHot: book.is_hot === "1",
-          isExclusive: book.is_exclusive === "1",
-          language: book.language,
-          totalChapter: Number(book.last_chapter_index),
-          thumbUrl: book.thumb_url,
-          series: { create: series },
-          tags: { create: tags },
-        },
-        include: {
-          series: { include: { videos: true } },
-          tags: { include: { tag: true } },
-        },
-      });
-
-      bookMap.set(book.book_id, serializeBook(savedBook));
+        bookMap.set(book.book_id, serializeBook(savedBook));
+      } catch (err) {
+        console.log("Save error:", err.message);
+      }
     }
 
     /* ================================
-     * Gabungkan hasil DB + API
-     * ================================ */
-    const result = [
-      ...dbBooks.map(serializeBook),
-      ...Array.from(bookMap.values()),
-    ].slice(0, take);
+       6️⃣ FINAL MERGE (NO DUPLICATE)
+    ================================== */
 
-    res.status(200).json(result);
+    const final = [...serializedDB, ...Array.from(bookMap.values())].slice(
+      0,
+      take,
+    );
+
+    return res.status(200).json(final);
   } catch (error) {
-    console.error(error);
-    res.status(500).json({ error: "Something went wrong" });
+    console.error("SEARCH FATAL ERROR:", error);
+    return res.status(500).json({
+      error: "Something went wrong",
+      message: error.message,
+    });
   }
 };
 
@@ -511,7 +538,6 @@ const play = async (req, res) => {
         streamUrl: video.mainUrl,
         resolution: video.resolution,
         expireTime: Number(video.expireTime),
-        disclaimer: video.disclaimer,
       });
     }
 
@@ -533,7 +559,6 @@ const play = async (req, res) => {
         videoWidth: stream.videoWidth,
         videoHeight: stream.videoHeight,
         resolution: stream.resolution,
-        disclaimer: stream.disclaimer,
       },
     });
 
@@ -541,7 +566,6 @@ const play = async (req, res) => {
       streamUrl: stream.mainUrl,
       resolution: stream.resolution,
       expireTime: Number(stream.expireTime),
-      disclaimer: stream.disclaimer,
       refreshed: true,
     });
   } catch (err) {

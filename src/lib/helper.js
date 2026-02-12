@@ -41,23 +41,23 @@ async function getValidStream(vid, oldVideo) {
     validateStatus: () => true,
   });
   const model = stream.data.data;
-  const video = JSON.parse(model.video_model).video_list;
+  const video = JSON.parse(model?.video_model).video_list;
+
   const resolution = {
-    "240p": decode(video.video_1.main_url),
-    "380p": decode(video.video_2.main_url),
-    "480p": decode(video.video_3.main_url),
-    "540p": decode(video.video_4.main_url),
-    "720p": decode(video.video_5.main_url),
+    "240p": decode(video.video_1?.main_url),
+    "380p": decode(video.video_2?.main_url),
+    "480p": decode(video.video_3?.main_url),
+    "540p": decode(video.video_4?.main_url),
+    "720p": decode(video.video_5?.main_url),
   };
 
   return {
-    mainUrl: model.main_url,
-    backupUrl: model.backup_url,
-    expireTime: Number(model.expire_time),
-    videoHeight: model.video_height,
-    videoWidth: model.video_width,
+    mainUrl: model?.main_url,
+    backupUrl: model?.backup_url,
+    expireTime: Number(model?.expire_time),
+    videoHeight: model?.video_height,
+    videoWidth: model?.video_width,
     resolution: JSON.stringify(resolution),
-    disclaimer: model.disclaimer_info,
   };
 }
 
