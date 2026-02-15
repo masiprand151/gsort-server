@@ -172,21 +172,18 @@ const getLatest = async (req, res) => {
     res.status(500).json({ message: "Internal Server Error" });
   }
 };
-
+// trending endpoint
 const trending = async (req, res) => {
   try {
     const melolo = await api.get("/trending");
-
     const result = [];
 
     for (const book of melolo.data.books) {
       try {
-        // fetch detail
         const detail = await api.get(`/detail/${book.book_id}`);
         const video_data = detail.data?.data?.video_data;
         if (!video_data) continue;
 
-        // build videos
         const videos = video_data.video_list.map((vid) => {
           const stream = vid.stream || {};
           return {
@@ -202,21 +199,15 @@ const trending = async (req, res) => {
             videoHeight: stream.videoHeight || null,
             videoWidth: stream.videoWidth || null,
             resolution: stream.resolution || {},
-            disclaimer: vid.disclaimer_info || {},
+            disclaimer: JSON.stringify(vid.disclaimer_info || {}),
           };
         });
 
-        // build tags
-        const tags = (book.stat_infos || []).map((t) => ({
-          tag: {
-            connectOrCreate: {
-              where: { name: t },
-              create: { name: t },
-            },
-          },
+        const tagsConnect = (book.stat_infos || []).map((t) => ({
+          where: { name: t },
+          create: { name: t },
         }));
 
-        // 1️⃣ Upsert Book (seri only create kalau Book baru)
         const bookUpserted = await prisma.book.upsert({
           where: { bookId: book.book_id },
           update: {
@@ -228,6 +219,7 @@ const trending = async (req, res) => {
             language: book.language,
             totalChapter: Number(book.last_chapter_index),
             thumbUrl: book.thumb_url,
+            tags: { connectOrCreate: tagsConnect }, // update tags
           },
           create: {
             bookId: book.book_id,
@@ -239,7 +231,6 @@ const trending = async (req, res) => {
             language: book.language,
             totalChapter: Number(book.last_chapter_index),
             thumbUrl: book.thumb_url,
-            // series only create jika Book baru
             series: {
               create: {
                 seriesId: String(video_data.series_id),
@@ -249,58 +240,17 @@ const trending = async (req, res) => {
                 episodeCount: video_data.episode_cnt,
                 followed: video_data.followed,
                 followedCount: video_data.followed_cnt,
-                videos: {
-                  createMany: { data: videos, skipDuplicates: true },
-                },
+                videos: { createMany: { data: videos, skipDuplicates: true } },
               },
             },
-            tags: { create: tags },
+            tags: { connectOrCreate: tagsConnect },
           },
           include: {
             series: { include: { videos: true } },
-            tags: { include: { tag: true } },
+            tags: true,
           },
         });
 
-        // 2️⃣ Update Series jika sudah ada
-        if (bookUpserted.series) {
-          await prisma.series.update({
-            where: { seriesId: String(video_data.series_id) },
-            data: {
-              title: video_data.series_title,
-              intro: video_data.series_intro,
-              cover: video_data.series_cover,
-              episodeCount: video_data.episode_cnt,
-              followed: video_data.followed,
-              followedCount: video_data.followed_cnt,
-              videos: { createMany: { data: videos, skipDuplicates: true } },
-            },
-          });
-        }
-
-        // 3️⃣ Update / Connect Tags (idempotent)
-        for (const t of tags) {
-          // 1️⃣ pastikan tag ada
-          const tagRecord = await prisma.tag.upsert({
-            where: { name: t.tag.connectOrCreate.where.name },
-            update: {},
-            create: { name: t.tag.connectOrCreate.create.name },
-          });
-
-          // 2️⃣ upsert ke BookTag
-          await prisma.bookTag.upsert({
-            where: {
-              bookId_tagId: { bookId: bookUpserted.id, tagId: tagRecord.id },
-            },
-            update: {},
-            create: {
-              bookId: bookUpserted.id,
-              tagId: tagRecord.id,
-            },
-          });
-        }
-
-        // serialize videos
         if (bookUpserted.series) {
           bookUpserted.series.videos = serializeVideos(
             bookUpserted.series.videos,
@@ -308,8 +258,8 @@ const trending = async (req, res) => {
         }
 
         result.push(bookUpserted);
-      } catch (bookErr) {
-        console.error("Error processing book", book.book_id, bookErr);
+      } catch (err) {
+        console.error("Error processing book", book.book_id, err);
         continue;
       }
     }
@@ -324,7 +274,6 @@ const trending = async (req, res) => {
 const search = async (req, res) => {
   try {
     const { q, limit = 10, offset = 0 } = req.query;
-
     if (!q) return res.json([]);
 
     const take = Number(limit);
@@ -332,18 +281,16 @@ const search = async (req, res) => {
 
     /* ================================
        1️⃣ SEARCH FROM DB
-    ================================== */
+    ================================= */
     const dbBooks = await prisma.book.findMany({
       where: {
-        bookName: {
-          contains: q,
-        },
+        bookName: { contains: q },
       },
       take,
       skip,
       include: {
         series: { include: { videos: true } },
-        tags: { include: { tag: true } },
+        tags: true, // langsung Tag[]
       },
     });
 
@@ -356,17 +303,14 @@ const search = async (req, res) => {
 
     /* ================================
        2️⃣ SEARCH FROM EXTERNAL API
-    ================================== */
-
+    ================================= */
     const remaining = take - serializedDB.length;
-
     let apiGroups = [];
 
     try {
       const melolo = await api.get(
         `/search?query=${encodeURIComponent(q)}&limit=${remaining}&offset=${skip}`,
       );
-
       apiGroups = melolo.data?.data?.search_data || [];
     } catch (err) {
       console.log("External search API error:", err.message);
@@ -377,21 +321,17 @@ const search = async (req, res) => {
       .flatMap((g) => g.books || [])
       .filter((b) => b.abstract && b.book_name);
 
-    if (!filteredBooks.length) {
-      return res.status(200).json(serializedDB);
-    }
+    if (!filteredBooks.length) return res.status(200).json(serializedDB);
 
     /* ================================
        3️⃣ CHECK EXISTING IN DB (BATCH)
-    ================================== */
-
+    ================================= */
     const bookIds = filteredBooks.map((b) => b.book_id);
-
     const existingBooks = await prisma.book.findMany({
       where: { bookId: { in: bookIds } },
       include: {
         series: { include: { videos: true } },
-        tags: { include: { tag: true } },
+        tags: true,
       },
     });
 
@@ -401,15 +341,12 @@ const search = async (req, res) => {
 
     /* ================================
        4️⃣ FETCH DETAILS FOR MISSING
-    ================================== */
-
+    ================================= */
     const missingBooks = filteredBooks.filter((b) => !bookMap.has(b.book_id));
-
     const details = await Promise.all(
       missingBooks.map(async (book) => {
         try {
           const resDetail = await api.get(`/detail/${book.book_id}`);
-
           return { book, detail: resDetail.data?.data };
         } catch (err) {
           console.log("Detail fetch error:", err.message);
@@ -420,11 +357,9 @@ const search = async (req, res) => {
 
     /* ================================
        5️⃣ SAVE NEW BOOKS (SAFE MODE)
-    ================================== */
-
+    ================================= */
     for (const item of details) {
       if (!item?.detail) continue;
-
       try {
         const { book, detail } = item;
         const videoData = detail.video_data || {};
@@ -433,7 +368,6 @@ const search = async (req, res) => {
           (videoData.video_list || []).map(async (vid) => {
             try {
               const stream = await getValidStream(vid.vid, null);
-
               return {
                 videoId: vid.vid,
                 index: vid.vid_index,
@@ -458,6 +392,12 @@ const search = async (req, res) => {
 
         const safeVideos = videos.filter(Boolean);
 
+        // build tags connectOrCreate
+        const tagsConnect = (book.stat_infos || []).map((t) => ({
+          where: { name: t },
+          create: { name: t },
+        }));
+
         const savedBook = await prisma.book.upsert({
           where: { bookId: book.book_id },
           update: {}, // jangan update berat saat search
@@ -471,7 +411,6 @@ const search = async (req, res) => {
             language: book.language,
             totalChapter: Number(book.last_chapter_index),
             thumbUrl: book.thumb_url,
-
             series: {
               create: {
                 seriesId: String(videoData.series_id),
@@ -482,17 +421,15 @@ const search = async (req, res) => {
                 followed: videoData.followed,
                 followedCount: videoData.followed_cnt,
                 videos: {
-                  createMany: {
-                    data: safeVideos,
-                    skipDuplicates: true,
-                  },
+                  createMany: { data: safeVideos, skipDuplicates: true },
                 },
               },
             },
+            tags: { connectOrCreate: tagsConnect }, // schema baru
           },
           include: {
             series: { include: { videos: true } },
-            tags: { include: { tag: true } },
+            tags: true,
           },
         });
 
@@ -504,13 +441,11 @@ const search = async (req, res) => {
 
     /* ================================
        6️⃣ FINAL MERGE (NO DUPLICATE)
-    ================================== */
-
+    ================================= */
     const final = [...serializedDB, ...Array.from(bookMap.values())].slice(
       0,
       take,
     );
-
     return res.status(200).json(final);
   } catch (error) {
     console.error("SEARCH FATAL ERROR:", error);
@@ -578,13 +513,26 @@ const play = async (req, res) => {
 const getDrama = async (req, res) => {
   try {
     const limit = Math.min(Number(req.query.limit) || 10, 20);
-
+    const tagName = req.query.tag;
     const cursor = req.query.cursor
       ? JSON.parse(Buffer.from(req.query.cursor, "base64").toString())
       : null;
 
+    const where = tagName
+      ? {
+          tags: {
+            some: {
+              name: {
+                contains: tagName,
+              },
+            },
+          },
+        }
+      : {};
+
     const books = await prisma.book.findMany({
       take: limit + 1,
+      where,
       ...(cursor && {
         cursor: {
           id: cursor.id,
@@ -601,7 +549,7 @@ const getDrama = async (req, res) => {
         { id: "desc" },
       ],
       include: {
-        tags: { include: { tag: true } },
+        tags: true,
         series: { include: { videos: true } },
       },
     });

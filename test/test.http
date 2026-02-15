@@ -10,7 +10,7 @@ GET {{baseUrl}}/trending
 Content-Type: application/json 
 
 ###
-GET {{baseUrl}}/search?q=pendekar
+GET {{baseUrl}}/search?q=sejarah
 Content-Type: application/json
 
 ###

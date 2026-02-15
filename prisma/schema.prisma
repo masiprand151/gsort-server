@@ -28,7 +28,7 @@ model User {
   updatedAt DateTime @updatedAt
 
   comments Comment[]
-  books    Book[] // relasi existing kamu
+  books    Book[] // relasi existing
   follows  Follow[]
   history  WatchHistory[]
   likes    VideoLike[]
@@ -73,30 +73,19 @@ model Book {
 
   series Series?
 
-  tags BookTag[]
+  tags Tag[] // implicit many-to-many
 
   createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
-  users User[]
-
+  users    User[]
   comments Comment[]
 }
 
-model BookTag {
-  bookId Int
-  tagId  Int
-
-  book Book @relation(fields: [bookId], references: [id])
-  tag  Tag  @relation(fields: [tagId], references: [id])
-
-  @@id([bookId, tagId])
-}
-
 model Tag {
-  id   Int    @id @default(autoincrement())
-  name String @unique
-
-  books BookTag[]
+  id    Int    @id @default(autoincrement())
+  name  String @unique
+  books Book[] // implicit many-to-many
 }
 
 model Series {
