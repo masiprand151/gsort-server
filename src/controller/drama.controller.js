@@ -177,96 +177,36 @@ const trending = async (req, res) => {
   try {
     const melolo = await api.get("/trending");
 
-    const result = await Promise.all(
-      melolo.data.books.map(async (book) => {
-        /**
-         * Cek DB dulu
-         */
-        let dbBook = await prisma.book.findUnique({
-          where: { bookId: book.book_id },
-          include: {
-            series: { include: { videos: true } },
-            tags: { include: { tag: true } },
-          },
-        });
+    const result = [];
 
-        if (dbBook) {
-          if (!dbBook.series?.videos?.length) {
-            return dbBook;
-          }
-
-          const updates = [];
-          const videos = await Promise.all(
-            dbBook.series.videos.map(async (v) => {
-              if (!isExpired(v.expireTime)) {
-                return v;
-              }
-
-              const stream = await getValidStream(v.videoId, v);
-
-              updates.push({
-                id: v.id,
-                data: {
-                  mainUrl: stream.mainUrl,
-                  backupUrl: stream.backupUrl,
-                  expireTime: stream.expireTime,
-                  videoHeight: stream.videoHeight,
-                  videoWidth: stream.videoWidth,
-                  resolution: stream.resolution,
-                  disclaimer: v.disclaimer,
-                },
-              });
-
-              return { ...v, ...stream };
-            }),
-          );
-
-          // bulk update
-          if (updates.length > 0) {
-            await prisma.$transaction(
-              updates.map((u) =>
-                prisma.video.update({
-                  where: { id: u.id },
-                  data: u.data,
-                }),
-              ),
-            );
-          }
-
-          dbBook.series.videos = serializeVideos(videos);
-          return dbBook;
-        }
-
-        /**
-         * Tidak ada di DB → fetch detail
-         */
+    for (const book of melolo.data.books) {
+      try {
+        // fetch detail
         const detail = await api.get(`/detail/${book.book_id}`);
         const video_data = detail.data?.data?.video_data;
-        if (!video_data) return null;
+        if (!video_data) continue;
 
-        const videos = await Promise.all(
-          video_data.video_list.map(async (vid) => {
-            const stream = await getValidStream(vid.vid, null);
+        // build videos
+        const videos = video_data.video_list.map((vid) => {
+          const stream = vid.stream || {};
+          return {
+            videoId: vid.vid,
+            index: vid.vid_index,
+            title: vid.title,
+            duration: vid.duration,
+            mainUrl: stream.mainUrl || "",
+            backupUrl: stream.backupUrl || null,
+            expireTime: stream.expireTime || null,
+            cover: vid.cover,
+            episodeCover: vid.episode_cover,
+            videoHeight: stream.videoHeight || null,
+            videoWidth: stream.videoWidth || null,
+            resolution: stream.resolution || {},
+            disclaimer: vid.disclaimer_info || {},
+          };
+        });
 
-            return {
-              videoId: vid.vid,
-              index: vid.vid_index,
-              title: vid.title,
-              disclaimer: stream.disclaimer,
-              duration: vid.duration,
-              mainUrl: stream.mainUrl,
-              backupUrl: stream.backupUrl,
-              expireTime: stream.expireTime,
-              cover: vid.cover,
-              episodeCover: vid.episode_cover,
-              videoHeight: stream.videoHeight,
-              videoWidth: stream.videoWidth,
-              resolution: stream.resolution,
-              disclaimer: JSON.stringify(vid.disclaimer_info || "{}"),
-            };
-          }),
-        );
-
+        // build tags
         const tags = (book.stat_infos || []).map((t) => ({
           tag: {
             connectOrCreate: {
@@ -276,8 +216,20 @@ const trending = async (req, res) => {
           },
         }));
 
-        const created = await prisma.book.create({
-          data: {
+        // 1️⃣ Upsert Book (seri only create kalau Book baru)
+        const bookUpserted = await prisma.book.upsert({
+          where: { bookId: book.book_id },
+          update: {
+            bookName: book.book_name,
+            description: book.abstract,
+            subDescription: book.sub_abstract,
+            isHot: book.is_hot === "1",
+            isExclusive: book.is_exclusive === "1",
+            language: book.language,
+            totalChapter: Number(book.last_chapter_index),
+            thumbUrl: book.thumb_url,
+          },
+          create: {
             bookId: book.book_id,
             bookName: book.book_name,
             description: book.abstract,
@@ -287,6 +239,7 @@ const trending = async (req, res) => {
             language: book.language,
             totalChapter: Number(book.last_chapter_index),
             thumbUrl: book.thumb_url,
+            // series only create jika Book baru
             series: {
               create: {
                 seriesId: String(video_data.series_id),
@@ -296,7 +249,9 @@ const trending = async (req, res) => {
                 episodeCount: video_data.episode_cnt,
                 followed: video_data.followed,
                 followedCount: video_data.followed_cnt,
-                videos: { create: videos },
+                videos: {
+                  createMany: { data: videos, skipDuplicates: true },
+                },
               },
             },
             tags: { create: tags },
@@ -307,15 +262,61 @@ const trending = async (req, res) => {
           },
         });
 
-        created.series.videos = serializeVideos(created.series.videos);
+        // 2️⃣ Update Series jika sudah ada
+        if (bookUpserted.series) {
+          await prisma.series.update({
+            where: { seriesId: String(video_data.series_id) },
+            data: {
+              title: video_data.series_title,
+              intro: video_data.series_intro,
+              cover: video_data.series_cover,
+              episodeCount: video_data.episode_cnt,
+              followed: video_data.followed,
+              followedCount: video_data.followed_cnt,
+              videos: { createMany: { data: videos, skipDuplicates: true } },
+            },
+          });
+        }
 
-        return created;
-      }),
-    );
+        // 3️⃣ Update / Connect Tags (idempotent)
+        for (const t of tags) {
+          // 1️⃣ pastikan tag ada
+          const tagRecord = await prisma.tag.upsert({
+            where: { name: t.tag.connectOrCreate.where.name },
+            update: {},
+            create: { name: t.tag.connectOrCreate.create.name },
+          });
 
-    res.status(200).json(result.filter(Boolean));
+          // 2️⃣ upsert ke BookTag
+          await prisma.bookTag.upsert({
+            where: {
+              bookId_tagId: { bookId: bookUpserted.id, tagId: tagRecord.id },
+            },
+            update: {},
+            create: {
+              bookId: bookUpserted.id,
+              tagId: tagRecord.id,
+            },
+          });
+        }
+
+        // serialize videos
+        if (bookUpserted.series) {
+          bookUpserted.series.videos = serializeVideos(
+            bookUpserted.series.videos,
+          );
+        }
+
+        result.push(bookUpserted);
+      } catch (bookErr) {
+        console.error("Error processing book", book.book_id, bookErr);
+        continue;
+      }
+    }
+
+    res.status(200).json(result);
   } catch (err) {
-    console.error(err);
+    console.error("Trending endpoint error:", err.code, err.meta, err);
     res.status(500).json({ message: "Internal Server Error" });
   }
 };
