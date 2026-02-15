@@ -14,5 +14,6 @@ app.use(express.json());
 app.use(require("./routes/drama"));
 app.use(require("./routes/auth"));
 app.use(require("./routes/user"));
+app.use(require("./routes/comment"));
 
 module.exports = { app };

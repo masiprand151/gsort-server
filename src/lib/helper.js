@@ -2,6 +2,8 @@ const { Buffer } = require("buffer");
 const api = require("./api");
 const jwt = require("jsonwebtoken");
 const { isExpired } = require("./ceck");
+const dayjs = require("dayjs");
+const relativeTime = require("dayjs/plugin/relativeTime.js");
 
 function serializeBook(book) {
   if (book?.series?.videos) {
@@ -73,10 +75,16 @@ const generateToken = (user) =>
     { expiresIn: "30d" },
   );
 
+dayjs.extend(relativeTime);
+function formatRelativeTime(date) {
+  return dayjs(date).fromNow();
+}
+
 module.exports = {
   serializeBigInt,
   serializeBook,
   getValidStream,
   serializeVideos,
   generateToken,
+  formatRelativeTime,
 };
