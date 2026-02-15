@@ -586,7 +586,7 @@ const getById = async (req, res) => {
     const result = await prisma.book.findUnique({
       where: { bookId },
       include: {
-        tags: { include: { tag: true } },
+        tags: true,
         series: {
           include: {
             videos: true,
@@ -623,6 +623,130 @@ const getAllTags = async (req, res) => {
   }
 };
 
+const follow = async (req, res) => {
+  try {
+    const userId = req.user.id; // dari auth middleware
+    const { seriesId } = req.body;
+
+    if (!seriesId) {
+      return res.status(400).json({
+        message: "seriesId is required",
+      });
+    }
+
+    // cek series ada atau tidak
+    const series = await prisma.series.findUnique({
+      where: { id: Number(seriesId) },
+    });
+
+    if (!series) {
+      return res.status(404).json({
+        message: "Series not found",
+      });
+    }
+
+    // cek sudah follow atau belum
+    const existing = await prisma.follow.findUnique({
+      where: {
+        userId_seriesId: {
+          userId,
+          seriesId: Number(seriesId),
+        },
+      },
+    });
+
+    // =============================
+    // UNFOLLOW
+    // =============================
+    if (existing) {
+      const result = await prisma.$transaction(async (tx) => {
+        await tx.follow.delete({
+          where: {
+            userId_seriesId: {
+              userId,
+              seriesId: Number(seriesId),
+            },
+          },
+        });
+        const s = await tx.series.update({
+          where: { id: Number(seriesId) },
+          data: {
+            followedCount: {
+              decrement: 1,
+            },
+          },
+        });
+
+        return s;
+      });
+
+      return res.json({
+        followed: false,
+        followedCount: result.followedCount,
+        message: "Unfollowed successfully",
+      });
+    }
+
+    // =============================
+    // FOLLOW
+    // =============================
+
+    const result = await prisma.$transaction(async (tx) => {
+      await tx.follow.create({
+        data: {
+          userId,
+          seriesId: Number(seriesId),
+        },
+      });
+
+      const s = await tx.series.update({
+        where: { id: Number(seriesId) },
+        data: {
+          followedCount: {
+            increment: 1,
+          },
+        },
+      });
+
+      return s;
+    });
+
+    return res.json({
+      followed: true,
+      followedCount: result.followedCount,
+      message: "Followed successfully",
+    });
+  } catch (error) {
+    console.error("Error handling follow:", error);
+    res.status(500).json({ message: "Internal Server Error" });
+  }
+};
+
+const checkFollow = async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const { seriesId } = req.params;
+
+    const existing = await prisma.follow.findUnique({
+      where: {
+        userId_seriesId: {
+          userId: userId,
+          seriesId: Number(seriesId),
+        },
+      },
+      include: { series: true },
+    });
+
+    res.json({
+      followed: !!existing,
+      followedCount: existing?.series?.followedCount,
+    });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: "Internal Server Error" });
+  }
+};
+
 module.exports = {
   getLatest,
   trending,
@@ -631,4 +755,6 @@ module.exports = {
   getDrama,
   getById,
   getAllTags,
+  follow,
+  checkFollow,
 };
