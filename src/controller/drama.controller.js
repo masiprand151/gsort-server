@@ -578,6 +578,7 @@ const play = async (req, res) => {
 const getDrama = async (req, res) => {
   try {
     const limit = Math.min(Number(req.query.limit) || 10, 20);
+
     const cursor = req.query.cursor
       ? JSON.parse(Buffer.from(req.query.cursor, "base64").toString())
       : null;
@@ -657,4 +658,29 @@ const getById = async (req, res) => {
   }
 };
 
-module.exports = { getLatest, trending, search, play, getDrama, getById };
+const getAllTags = async (req, res) => {
+  try {
+    const tags = await prisma.tag.findMany({
+      orderBy: { name: "asc" }, // urut alfabet
+      select: {
+        id: true,
+        name: true,
+      },
+    });
+
+    res.status(200).json(tags);
+  } catch (err) {
+    console.error("Error fetching tags:", err);
+    res.status(500).json({ message: "Internal Server Error" });
+  }
+};
+
+module.exports = {
+  getLatest,
+  trending,
+  search,
+  play,
+  getDrama,
+  getById,
+  getAllTags,
+};
