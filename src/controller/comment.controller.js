@@ -1,32 +1,37 @@
+const { formatRelativeTime } = require("../lib/helper");
 const prisma = require("../lib/prisma");
 
 const createComment = async (req, res) => {
   try {
-    const userId = req.user.id; // dari auth middleware
-    const { bookId, content } = req.body;
+    const userId = req.user.id;
+    const { videoId, content } = req.body;
 
-    if (!bookId || !content?.trim()) {
+    // 1️⃣ Validasi input
+    if (!videoId || !content?.trim()) {
       return res.status(400).json({
-        message: "bookId and content are required",
+        message: "videoId and content are required",
       });
     }
 
-    // cek book ada atau tidak
-    const book = await prisma.book.findUnique({
-      where: { bookId },
+    // 2️⃣ Cek video ada atau tidak
+    const video = await prisma.video.findUnique({
+      where: {
+        videoId: videoId, // HAPUS Number() kalau di schema String
+      },
     });
 
-    if (!book) {
+    if (!video) {
       return res.status(404).json({
-        message: "Book not found",
+        message: "Video not found",
       });
     }
 
+    // 3️⃣ Buat comment
     const comment = await prisma.comment.create({
       data: {
         content: content.trim(),
-        userId: userId, // ✅ cukup ini
-        bookId: book.id,
+        userId,
+        videoId: video.videoId, // pastikan sesuai tipe di schema
       },
       include: {
         user: {
@@ -39,26 +44,29 @@ const createComment = async (req, res) => {
       },
     });
 
+    // 4️⃣ Return hasil
     return res.status(201).json(comment);
   } catch (error) {
     console.error("Create comment error:", error);
-    res.status(500).json({ message: "Internal Server Error" });
+    return res.status(500).json({
+      message: "Internal Server Error",
+    });
   }
 };
 
 const getComments = async (req, res) => {
   try {
-    const { bookId, cursor, limit = 10 } = req.query;
+    const { videoId, cursor, limit = 10 } = req.query;
 
-    if (!bookId) {
+    if (!videoId) {
       return res.status(400).json({
-        message: "bookId is required",
+        message: "videoId is required",
       });
     }
 
     const comments = await prisma.comment.findMany({
       where: {
-        bookId: Number(bookId),
+        videoId: videoId,
       },
       take: Number(limit),
       skip: cursor ? 1 : 0,
@@ -77,6 +85,10 @@ const getComments = async (req, res) => {
       },
     });
 
+    const totalCount = await prisma.comment.count({
+      where: { videoId: videoId },
+    });
+
     const formatted = comments.map((comment) => ({
       ...comment,
       createdAt: formatRelativeTime(comment.createdAt),
@@ -86,10 +98,10 @@ const getComments = async (req, res) => {
       comments.length === Number(limit)
         ? comments[comments.length - 1].id
         : null;
-    console.log(formatted);
 
     return res.json({
       data: formatted,
+      totalCount,
       nextCursor,
       hasNext: !!nextCursor,
     });
@@ -132,5 +144,19 @@ const deleteComment = async (req, res) => {
     res.status(500).json({ message: "Internal Server Error" });
   }
 };
+const getCommentCount = async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const { videoId } = req.params;
+    const totalCount = await prisma.comment.count({
+      where: { videoId: videoId },
+    });
 
-module.exports = { createComment, deleteComment, getComments };
+    res.status(200).json({ totalCount });
+  } catch (error) {
+    console.error("Delete comment error:", error);
+    res.status(500).json({ message: "Internal Server Error" });
+  }
+};
+
+module.exports = { createComment, deleteComment, getComments, getCommentCount };
