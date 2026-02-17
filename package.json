@@ -23,10 +23,10 @@
     "dotenv": "^17.2.3",
     "express": "^5.2.1",
     "jsonwebtoken": "^9.0.3",
-    "uuid": "^13.0.0"
+    "uuid": "^13.0.0",
+    "prisma": "^6.19.2"
   },
   "devDependencies": {
-    "prisma": "^6.19.2",
     "nodemon": "^3.1.11"
   }
 }
