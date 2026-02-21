@@ -100,7 +100,7 @@ const getComments = async (req, res) => {
         : null;
 
     return res.json({
-      data: formatted,
+      data: comments,
       totalCount,
       nextCursor,
       hasNext: !!nextCursor,
